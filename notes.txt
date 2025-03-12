@@ -1,0 +1,131 @@
+Step 3: Check #1 - Wrong Access (BOLA)
+
+### Issue:
+When no authentication token (JWT) is provided, the server responds with a `401 Unauthorized` error.
+The error message returned is: 
+```json
+{"detail": "Not authenticated"}
+
+This behavior is expected because the API requires a valid JWT token for accessing protected endpoints such as creating, updating, and deleting tasks. The server is correctly rejecting requests without valid authentication, ensuring that unauthorized users cannot perform any operations on the API.
+
+Action:
+Ensure that valid authentication tokens are included in the request headers when accessing the protected endpoints.
+
+Example of a valid request:
+Authorization: Bearer your_jwt_token
+
+-----------------------------------------------------------------------------------------------
+
+Step 4: Check #2 - No Login (Broken Authentication)
+
+Issue:
+No Login (Broken Authentication): The API correctly rejects access without a valid authentication token. For example, when sending a GET request to /tasks without an authentication token, the server responds with a 401 Unauthorized error: {"detail": "Not authenticated"}.
+Explanation:
+This is the expected behavior, as the API requires users to authenticate by providing a valid JWT token before accessing sensitive endpoints like /tasks.
+The server is rejecting unauthorized requests, ensuring that only authenticated users can access the task management functionality.
+Action:
+Ensure that users include a valid JWT token in the request headers when accessing protected endpoints, such as /tasks.
+
+-----------------------------------------------------------------------------------------------
+
+Step 5: Check #3 - Changing Too Much (Broken Property Authorization)
+
+Issue:
+Broken Property Authorization: When sending a POST /tasks request with extra fields (like extra_field), the API ignores the extra properties and only saves the valid fields (title and description).
+Explanation:
+The API is correctly filtering out any properties that are not part of the defined schema (i.e., TaskCreate model). This prevents unintended or malicious data from being added to the task.
+This is the expected behavior, as it ensures that only valid data is processed, and any extra or invalid fields are ignored.
+Action:
+This behavior is correct, and no action is needed. The API is effectively preventing the inclusion of extra properties in the task creation process 
+
+-----------------------------------------------------------------------------------------------
+
+Step 6: Check #4 - Too Much Stuff (Resource Consumption)
+
+Test:
+I added a giant task with a very long title (1000 characters) and description to see how the API handles large inputs.
+
+Result:
+The API successfully accepted the request and created the task with the giant title and description without any issues. There was no crash or slow performance observed during the operation.
+
+Notes:
+Although the API did not crash or slow down, it's important to consider limiting the length of inputs for fields like "title" and "description" to prevent potential resource consumption issues. A proper validation for input size should be implemented to avoid large data being stored unnecessarily.
+
+-----------------------------------------------------------------------------------------------
+
+Step 7: Check #5 - Wrong Permissions (Function Authorization)
+
+Test:
+I tested if anyone can perform certain actions, specifically a special action that should be restricted, such as deleting all tasks at once.
+
+Result:
+When I attempted to access the endpoint /tasks/all without proper authentication, the API correctly responded with a "Not authenticated" message, preventing unauthorized users from performing this operation.
+
+Notes:
+It seems the API is correctly restricting access to sensitive operations like deleting all tasks. It's important to ensure that such actions are locked down and require proper permissions to execute, such as admin privileges.
+
+-----------------------------------------------------------------------------------------------
+
+Step 8: Check #6 - Overusing It (Sensitive Flows)
+Test: Tried deleting tasks multiple times using DELETE /tasks/{id}.
+
+Result: Successfully deleted the first 3 tasks. When trying to delete the 4th task (which doesn't exist anymore), the server responded with a "Task not found" error, as expected.
+
+Conclusion: The server correctly handles multiple delete requests and prevents deletion of non-existing tasks. This is a good behavior as it ensures no invalid actions are performed on the database.
+
+-----------------------------------------------------------------------------------------------
+
+Step 9: Check #7 - Tricking the Server (SSRF)
+
+Issue:
+Fetching Links: The system successfully fetched internal links like http://127.0.0.1:8000 and http://localhost:8000, returning the expected page content.
+External Address Test: The request to http://169.254.169.254/latest/meta-data/ failed, showing that the page was unreachable, which indicates there are some access restrictions in place.
+Risk: While internal addresses can be accessed, no sensitive data was exposed through the SSRF test. However, further measures should be implemented to block certain URLs (such as private AWS metadata links) to prevent possible SSRF attacks in a real-world applicatio
+
+-----------------------------------------------------------------------------------------------
+
+Step 10: Security Misconfiguration (Error Handling)
+
+The API currently returns a generic {"detail": "Task not found"} message for missing tasks, which is good as it doesn’t expose sensitive information.
+However, the logs show detailed SQL queries and internal database structure, which could be a security risk if exposed in production.
+To fix this, logging should be configured to hide sensitive details, and error messages should be more user-friendly while keeping internal errors private.
+
+-----------------------------------------------------------------------------------------------
+
+Step 11: Check #9 - Old Stuff (Inventory Management)
+
+No deprecated or old routes were found in the API. The system does not contain leftover feature
+
+-----------------------------------------------------------------------------------------------
+
+Step 12: Check #10 - Trusting Bad Data (Unsafe APIs)
+
+Test Performed: Sent an API request with extremely long values for title and description.
+Result: The API correctly rejected the request and returned an error message indicating that the maximum allowed length for title is 10 characters and for description is 5 characters.
+Risk Assessment: No immediate risk found, as input validation is enforced.
+Recommendation: Ensure that length limits are practical and align with business needs. If necessary, adjust them to allow reasonable input lengths while still preventing excessive data.
+
+-----------------------------------------------------------------------------------------------
+
+Step 13: Fix and Share
+
+To address the BOLA issue, we implemented proper authorization checks for each task. Initially, any user could access and modify any task, regardless of ownership. To fix this, we added JWT Authentication to ensure that only the user who created a task can access or modify it.
+
+Solution:
+User Authentication and Task Ownership Validation: Each route for viewing, editing, or deleting a task now checks if the task belongs to the authenticated user. We compared the owner_id of the task with the authenticated user's ID (from JWT) to ensure they match.
+
+Code Change: For example, the code to retrieve a task looks like this:
+@router.get("/tasks/{task_id}")
+def get_task(task_id: int, current_user: User = Depends(get_current_user)):
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to access this task")
+    return task
+In this code:
+
+get_current_user: A dependency function that verifies the JWT and extracts the user.
+We ensure that the task.owner_id matches the authenticated user’s ID before allowing access.
+Outcome:
+After this change, users can only view, edit, or delete their own tasks, which resolved the BOLA Issue
